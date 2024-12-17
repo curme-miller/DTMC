@@ -3,20 +3,19 @@ import matplotlib.pyplot as plt
 from rich.progress import track
 
 ############################################
-# 参数设置
+# 参数设置（减少迭代数、传输次数加快运行）
 ############################################
 N = 200         # LDPC码长
 M = 100         # 校验方程数量（M < N）
-num_runs = 50  # 每个SNR下的码字传输数量
+num_runs = 100   # 每个SNR下的码字传输数量（减少以加快运行）
 SNR_dB_list = [0, 1, 2, 3, 4, 5]  # 测试的SNR列表(单位dB)
-iterations = 500      # MCMC总迭代次数
-burn_in = 100          # MCMC烧入期
+iterations = 1000      # MCMC总迭代次数（减少）
+burn_in = 100          # MCMC烧入期（减少）
 
 np.random.seed(42)
 
 ############################################
 # 构造随机稀疏LDPC校验矩阵H (M x N)
-# 为简单起见，每行有~N/10个1，模拟稀疏特性。
 ############################################
 density = 0.1
 H = np.zeros((M, N), dtype=int)
@@ -25,27 +24,25 @@ for i in range(M):
     H[i, ones_positions] = 1
 
 ############################################
-# 生成满足Hx=0的码字函数（简单低效方法）
+# 固定码字为全0码字，满足Hx=0，无需重复尝试
 ############################################
 def generate_codeword():
-    while True:
-        x = np.random.randint(0, 2, N)
-        if np.all((H.dot(x) % 2) == 0):
-            return x
+    return np.zeros(N, dtype=int)
 
 ############################################
 # MCMC相关函数定义
 ############################################
 def pi_func(x, y, sigma2):
-    # 目标分布比例函数：p(x|y) ∝ p(y|x)*p(x)
-    # 假设先验p(x)均匀，p(y|x)=exp(-||y - x||^2/(2*sigma²))
-    # 对不满足Hx=0的x, 赋予很低概率。
+    # p(x|y) ∝ p(y|x)*p(x)
+    # 先验p(x)均匀
+    # p(y|x)=exp(-||y - x||^2/(2*sigma²))
+    # 不满足Hx=0的x, 概率极低。
     if not np.all((H.dot(x) % 2) == 0):
         return 1e-30
     diff = y - x
     return np.exp(-np.sum(diff**2)/(2*sigma2))
 
-def mcmc_decode(y, sigma2, iterations=5000, burn_in=1000):
+def mcmc_decode(y, sigma2, iterations=1000, burn_in=200):
     # MCMC解码：Metropolis-Hastings
     x_current = (y > 0.5).astype(int)  # 根据接收值初始化
     current_prob = pi_func(x_current, y, sigma2)
@@ -88,7 +85,7 @@ for SNR_dB in track(SNR_dB_list, description="Processing SNR points..."):
 
     # 对每个SNR进行多次传输以求平均BER
     for run_idx in range(num_runs):
-        # 生成码字
+        # 生成码字（全0）
         x_true = generate_codeword()
         # BPSK调制：0->-1, 1->+1
         x_bpsk = 2*x_true - 1
